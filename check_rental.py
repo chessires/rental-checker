@@ -2,14 +2,11 @@ import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-import requests
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 
-# 監控目標網址與通知信箱
-URL = "https://rental.aconeco.com/20"
+URL = "https://rental.aconeco.com/21"
 TO_EMAIL = "chessires@gmail.com"
 
-# 發信設定（從 GitHub Secrets 讀取）
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
@@ -17,31 +14,35 @@ SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")
 
 
 def check_availability():
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        )
-    }
+    with sync_playwright() as p:
+        # 啟動無頭瀏覽器
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
 
-    try:
-        response = requests.get(URL, headers=headers, timeout=10)
-        response.raise_for_status()
+        try:
+            print("正在載入網頁...")
+            page.goto(URL, wait_until="networkidle", timeout=30000)
+            
+            # 等待頁面文字載入完畢（可根據狀況稍作緩衝）
+            page.wait_for_timeout(3000)
 
-        # 解析網頁內容
-        soup = BeautifulSoup(response.text, "html.parser")
-        page_text = soup.get_text()
+            # 抓取瀏覽器渲染後的完整頁面內容
+            content = page.content()
+            page_text = page.inner_text("body")
 
-        # 判斷條件：出現「立即登記」且不再出現「非開放登記時間」
-        if "立即登記" in page_text and "非開放登記時間" not in page_text:
-            print("【檢測結果】已開放登記！準備發送郵件通知...")
-            send_email()
-        else:
-            print("【檢測結果】目前尚未開放登記（狀態未變更）。")
+            print("--- 網頁載入完成，開始比對狀態 ---")
 
-    except Exception as e:
-        print(f"爬取網頁時發生錯誤: {e}")
+            # 只要頁面出現「立即登記」，且不再顯示「非開放登記時間」
+            if "立即登記" in page_text and "非開放登記時間" not in page_text:
+                print("【檢測結果】已開放登記！準備發送郵件通知...")
+                send_email()
+            else:
+                print("【檢測結果】目前尚未開放登記。")
+
+        except Exception as e:
+            print(f"執行時發生錯誤: {e}")
+        finally:
+            browser.close()
 
 
 def send_email():
