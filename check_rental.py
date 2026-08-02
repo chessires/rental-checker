@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 
 # 監控目標網址與通知信箱
-URL = "https://rental.aconeco.com/21"
+URL = "https://rental.aconeco.com/20"
 TO_EMAIL = "chessires@gmail.com"
 
 # 發信設定（從 GitHub Secrets 讀取）
