@@ -4,7 +4,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from playwright.sync_api import sync_playwright
 
-URL = "https://rental.aconeco.com/21"
+URL = "https://rental.aconeco.com/20"
 TO_EMAIL = "chessires@gmail.com"
 
 SMTP_SERVER = "smtp.gmail.com"
