@@ -15,27 +15,40 @@ SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")
 
 def check_availability():
     with sync_playwright() as p:
-        # 啟動無頭瀏覽器
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        # 設定較大的螢幕解析度與真實 User-Agent，避免 mobile 版網頁結構不同
+        context = browser.new_context(
+            viewport={"width": 1280, "height": 800},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+        page = context.new_page()
 
         try:
             print("正在載入網頁...")
             page.goto(URL, wait_until="networkidle", timeout=30000)
             
-            # 等待頁面文字載入完畢（可根據狀況稍作緩衝）
-            page.wait_for_timeout(3000)
+            # 等待前端 Vue/React DOM 完全掛載
+            page.wait_for_timeout(4000)
 
-            # 抓取瀏覽器渲染後的完整頁面內容
-            content = page.content()
+            # 抓取頁面上所有按鈕或主要區塊的文字（用於 Debug log）
+            buttons = page.locator("button, a.btn, div[role='button']").all_inner_texts()
+            clean_buttons = [b.strip() for b in buttons if b.strip()]
+            print(f"【Debug】偵測到的按鈕文字列表: {clean_buttons}")
+
             page_text = page.inner_text("body")
 
-            print("--- 網頁載入完成，開始比對狀態 ---")
+            # 判斷條款：
+            # 條件 1：內文或按鈕包含「立即登記」/「開放登記」/「申請」
+            # 條件 2：沒有包含「非開放」或「未開放」或「已額滿」
+            has_register_keyword = any(kw in page_text for kw in ["立即登記", "開放登記", "線上登記"])
+            has_closed_keyword = any(kw in page_text for kw in ["非開放登記時間", "未開放", "暫不開放"])
 
-            # 只要頁面出現「立即登記」，且不再顯示「非開放登記時間」
-            if "立即登記" in page_text and "非開放登記時間" not in page_text:
+            print(f"【Debug】包含開放關鍵字: {has_register_keyword} | 包含封閉關鍵字: {has_closed_keyword}")
+
+            # 只要出現開放關鍵字，且封閉關鍵字消失，就認定為開放
+            if has_register_keyword and not has_closed_keyword:
                 print("【檢測結果】已開放登記！準備發送郵件通知...")
-                send_email()
+                send_email(clean_buttons)
             else:
                 print("【檢測結果】目前尚未開放登記。")
 
@@ -45,7 +58,7 @@ def check_availability():
             browser.close()
 
 
-def send_email():
+def send_email(button_info):
     if not SENDER_EMAIL or not SENDER_PASSWORD:
         print("錯誤：未設定發件人信箱或密碼環境變數。")
         return
@@ -53,9 +66,13 @@ def send_email():
     msg = MIMEMultipart()
     msg["From"] = SENDER_EMAIL
     msg["To"] = TO_EMAIL
-    msg["Subject"] = "【開放登記通知】網頁已開放登記！"
+    msg["Subject"] = "【開放登記通知】貓咪公寓/租賃網頁已開放登記！"
 
-    body = f"您關注的網頁已變更狀態為【立即登記】！\n\n請立即點擊連結前往登記：\n{URL}"
+    body = (
+        f"您關注的網頁狀態已變更！\n\n"
+        f"目前頁面偵測到的按鈕狀態：{button_info}\n\n"
+        f"請立即點擊連結前往登記：\n{URL}"
+    )
     msg.attach(MIMEText(body, "plain", "utf-8"))
 
     try:
