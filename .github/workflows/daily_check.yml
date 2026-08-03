@@ -2,7 +2,7 @@ name: Daily Rental Status Check
 
 on:
   schedule:
-    - cron: '0 4 * * *'
+    - cron: '5 4 * * *'
   workflow_dispatch:
 
 jobs:
